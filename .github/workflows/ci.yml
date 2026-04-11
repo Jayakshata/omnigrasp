@@ -93,12 +93,12 @@ jobs:
       # ========================================================================
       - name: Lint with flake8
         run: |
-          flake8 src/ --max-line-length=100 --exclude=__pycache__,*.egg-info
+          python3 -m flake8 src/ --max-line-length=100 --exclude=__pycache__,*.egg-info
         continue-on-error: false
 
       - name: Check formatting with black
         run: |
-          black --check --line-length=100 src/
+          python3 -m black --check --line-length=100 src/
         continue-on-error: false
 
       # ========================================================================
