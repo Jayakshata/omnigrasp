@@ -1,0 +1,81 @@
+# ==============================================================================
+# OmniGrasp Docker Compose
+# ==============================================================================
+# This file defines all the services (containers) that make up OmniGrasp
+# and how they communicate with each other.
+#
+# To start everything:  docker compose -f docker/docker-compose.yml up
+# To stop everything:   docker compose -f docker/docker-compose.yml down
+# To rebuild after code changes: docker compose -f docker/docker-compose.yml up --build
+# ==============================================================================
+
+# 'version' is no longer required in modern Docker Compose (v2+),
+# but some older tutorials include it. We skip it — it's cleaner.
+
+services:
+  # ============================================================================
+  # ROS2 NODES SERVICE
+  # This container runs our perception and control nodes.
+  # ============================================================================
+  ros2_nodes:
+    # 'build' tells Compose to build an image from a Dockerfile
+    # instead of pulling a pre-built one from Docker Hub.
+    build:
+      context: ..
+      # 'context: ..' means "go up one directory (to omnigrasp/) for the build context"
+      # This is because docker-compose.yml is inside docker/, but the Dockerfile
+      # needs access to src/ which is in the parent directory.
+      dockerfile: docker/Dockerfile
+
+    # 'container_name' gives the container a human-readable name
+    # instead of a random one like "docker-ros2_nodes-1"
+    container_name: omnigrasp_ros2
+
+    # 'network_mode: host' means this container shares the host's network.
+    # Why? ROS2 uses DDS (a network protocol) for communication between nodes.
+    # DDS uses multicast, which doesn't work well with Docker's default networking.
+    # 'host' mode lets all ROS2 containers discover each other automatically.
+    # This is the standard approach for ROS2 + Docker on a single machine.
+    network_mode: host
+
+    # 'stdin_open: true' and 'tty: true' keep the container running
+    # with an interactive terminal. Same as 'docker run -it'.
+    # Without these, the container would start and immediately exit
+    # because there's no long-running command by default.
+    stdin_open: true
+    tty: true
+
+    # 'volumes' mount directories from your host into the container.
+    # This means changes to your code on your machine are INSTANTLY
+    # reflected inside the container — no rebuild needed for Python files.
+    #
+    # Format: host_path:container_path
+    # '../src' (on your machine) → '/ros2_ws/src' (inside container)
+    volumes:
+      - ../src:/ros2_ws/src
+
+    # 'command' overrides the default CMD from the Dockerfile.
+    # This keeps the container alive with a bash shell.
+    command: bash
+
+  # ============================================================================
+  # ROSBRIDGE SERVER
+  # This translates between ROS2 topics and WebSocket messages,
+  # allowing our web dashboard (HTML/JS) to talk to ROS2.
+  # ============================================================================
+  rosbridge:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: omnigrasp_rosbridge
+    network_mode: host
+    # 'depends_on' means "start ros2_nodes before starting this container."
+    # It doesn't wait for ros2_nodes to be fully ready (just started).
+    # It expresses the dependency: rosbridge needs ROS2 to be available.
+    depends_on:
+      - ros2_nodes
+
+    # This command starts the rosbridge WebSocket server.
+    # 'ros2 launch' is how you start ROS2 programs.
+    # rosbridge_server will listen on port 9090 by default.
+    command: ros2 launch rosbridge_server rosbridge_websocket_launch.xml
