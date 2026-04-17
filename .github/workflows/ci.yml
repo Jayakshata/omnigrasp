@@ -13,63 +13,44 @@
 # 'name' is what appears in the GitHub Actions tab
 name: OmniGrasp CI
 
-# ==============================================================================
-# TRIGGERS
-# 'on' defines WHEN this workflow runs.
-#
-# push → runs when code is pushed to main branch
-# pull_request → runs when someone opens a PR to main
-#
-# WHY both? Push catches issues after merging. PR catches issues BEFORE
-# merging. This is standard practice — catch problems at every gate.
-# ==============================================================================
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
 
-# ==============================================================================
-# JOBS
-# A workflow has one or more 'jobs'. Each job runs on a fresh virtual machine.
-# Our pipeline has one job with multiple steps that run sequentially.
-# ==============================================================================
 jobs:
   build-and-test:
-    # 'runs-on' specifies the virtual machine type.
-    # ubuntu-22.04 matches our Docker base (ROS2 Humble needs Ubuntu 22.04).
     runs-on: ubuntu-22.04
 
-    # 'container' runs all steps inside a Docker container.
-    # This gives us ROS2 pre-installed without manual setup.
-    # It's the SAME base image our Dockerfile uses — consistency matters.
     container:
       image: ros:humble-ros-base
 
     steps:
-      # ========================================================================
-      # STEP 1: CHECKOUT CODE
-      # This pulls your repository code into the runner.
-      # Without this, the runner has an empty workspace.
-      # 'actions/checkout@v4' is a pre-built action maintained by GitHub.
-      # ========================================================================
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ========================================================================
-      # STEP 2: INSTALL DEPENDENCIES
-      # Install the same tools our Dockerfile installs.
-      # We need these for linting, building, and testing.
-      # ========================================================================
+      # ================================================================
+      # CACHE: Save pip packages between runs so we don't re-download
+      # PyTorch (2GB) every single time. First run is slow, but every
+      # run after that reuses the cache and takes ~1-2 minutes instead
+      # of 1+ hour.
+      # ================================================================
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/python3.10/dist-packages
+          key: pip-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: pip-
+
       - name: Install dependencies
         run: |
           apt-get update && apt-get install -y --no-install-recommends \
             python3-pip \
             python3-colcon-common-extensions \
-            python3-rosdep \
             ros-humble-cv-bridge \
             ros-humble-vision-msgs \
-            ros-humble-rosbridge-suite
+            ros-humble-rosbridge-suite > /dev/null 2>&1
           pip3 install --no-cache-dir \
             flake8 \
             black \
@@ -79,38 +60,14 @@ jobs:
             filterpy \
             opencv-python-headless
 
-      # ========================================================================
-      # STEP 3: LINT — CODE FORMATTING CHECK
-      # 'flake8' checks Python code for errors and style violations.
-      # 'black --check' verifies code is formatted consistently.
-      #
-      # WHY: Consistent formatting means anyone can read your code.
-      # It's not about personal preference — it's about team readability.
-      #
-      # --max-line-length=100: We allow 100-char lines (default 79 is too tight)
-      # --exclude: Skip auto-generated files and virtual environments
-      # --check: Don't modify files, just report if they WOULD change
-      # ========================================================================
       - name: Lint with flake8
         run: |
           python3 -m flake8 src/ --max-line-length=100 --exclude=__pycache__,*.egg-info
-        continue-on-error: false
 
       - name: Check formatting with black
         run: |
           python3 -m black --check --line-length=100 src/
-        continue-on-error: false
 
-      # ========================================================================
-      # STEP 4: BUILD THE ROS2 WORKSPACE
-      # This compiles all your ROS2 packages using colcon.
-      #
-      # 'source /opt/ros/humble/setup.bash' activates ROS2 (same as entrypoint)
-      # 'colcon build' compiles everything in src/
-      #
-      # If your code has import errors, syntax errors, or missing dependencies,
-      # this step will FAIL — and that's the point. Catch it here, not in prod.
-      # ========================================================================
       - name: Build ROS2 workspace
         run: |
           source /opt/ros/humble/setup.bash
@@ -118,14 +75,6 @@ jobs:
           colcon build --symlink-install
         shell: bash
 
-      # ========================================================================
-      # STEP 5: RUN TESTS
-      # colcon test runs all test files in your packages.
-      # pytest discovers files named test_*.py and runs them.
-      #
-      # We also run 'colcon test-result --verbose' which prints detailed
-      # output if any test fails — essential for debugging in CI.
-      # ========================================================================
       - name: Run tests
         run: |
           source /opt/ros/humble/setup.bash
