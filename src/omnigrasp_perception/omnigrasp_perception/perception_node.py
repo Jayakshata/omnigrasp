@@ -55,9 +55,7 @@ class PerceptionNode(Node):
         # ============================================================
 
         # Camera RGB image from Isaac Sim
-        self.rgb_sub = self.create_subscription(
-            Image, "/camera/rgb_image", self.rgb_callback, 10
-        )
+        self.rgb_sub = self.create_subscription(Image, "/camera/rgb_image", self.rgb_callback, 10)
 
         # Camera depth image from Isaac Sim
         self.depth_sub = self.create_subscription(

@@ -9,6 +9,7 @@ This is like a manifest that says:
 The 'console_scripts' section is KEY — it registers your ROS2 nodes
 so you can run them with 'ros2 run omnigrasp_perception perception_node'
 """
+
 from setuptools import find_packages, setup
 
 package_name = "omnigrasp_perception"
