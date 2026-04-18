@@ -36,6 +36,7 @@ setup(
             # This means: 'ros2 run omnigrasp_perception perception_node'
             # will call the 'main()' function in perception_node.py
             "perception_node = omnigrasp_perception.perception_node:main",
+            "mock_camera_node = omnigrasp_perception.mock_camera_node:main",
         ],
     },
 )
