@@ -32,7 +32,7 @@ Even for a stationary object, tracking velocity lets the filter
 detect when something starts moving and react faster.
 """
 
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
@@ -174,8 +174,8 @@ class TemporalFilter:
         self.state = self.state + K @ y
 
         # Update covariance: we're now more certain
-        I = np.eye(6)
-        self.P = (I - K @ self.H) @ self.P
+        identity = np.eye(6)
+        self.P = (identity - K @ self.H) @ self.P
 
         return self.state[:3].copy()
 

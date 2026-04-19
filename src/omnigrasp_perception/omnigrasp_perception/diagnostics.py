@@ -22,7 +22,7 @@ FAILURE MODES WE HANDLE:
 """
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 
