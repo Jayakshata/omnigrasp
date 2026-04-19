@@ -251,10 +251,8 @@ class PerceptionNode(Node):
 
         # Set orientation from grasp info if available
         if grasp_info and grasp_info.get("approach_direction") is not None:
-            normal = grasp_info["approach_direction"]
-            # Simple quaternion from approach direction
-            # (pointing Z axis along the surface normal)
-            # For a full implementation, we'd use scipy Rotation
+            # TODO: Convert approach_direction to quaternion using scipy Rotation
+            # For now, use identity quaternion (no rotation)
             pose_msg.pose.orientation.x = 0.0
             pose_msg.pose.orientation.y = 0.0
             pose_msg.pose.orientation.z = 0.0
