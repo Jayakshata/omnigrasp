@@ -9,7 +9,7 @@ WHAT THESE TESTS PROVE:
 """
 
 import numpy as np
-import pytest
+
 
 from omnigrasp_perception.tracking.temporal_filter import TemporalFilter
 

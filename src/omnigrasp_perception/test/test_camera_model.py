@@ -12,7 +12,7 @@ understand 3D vision, not just 2D detection.
 """
 
 import numpy as np
-import pytest
+
 
 from omnigrasp_perception.geometry.camera_model import PinholeCamera, CameraIntrinsics
 
