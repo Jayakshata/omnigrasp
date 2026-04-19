@@ -32,8 +32,6 @@ Even for a stationary object, tracking velocity lets the filter
 detect when something starts moving and react faster.
 """
 
-from typing import Optional
-
 import numpy as np
 
 
