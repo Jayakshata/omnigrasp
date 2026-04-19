@@ -25,7 +25,7 @@ HOW WE ESTIMATE THE POSE:
    Align the gripper's fingers with this axis.
 """
 
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
