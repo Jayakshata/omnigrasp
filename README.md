@@ -9,51 +9,31 @@ OmniGrasp enables a robot arm to grasp arbitrary objects from natural language c
 ---
 
 ## System Architecture
-┌─────────────────┐       "pick up the red bolt"
-│    Dashboard     │──────────────────────────────────┐
-│   (Browser)      │                                   │
-└─────────────────┘                                   │
-▼
-┌─────────────────┐    RGB + Depth     ┌──────────────────────────────────┐
-│                  │─────────────────▶│        PERCEPTION STACK           │
-│   Isaac Sim      │                   │                                    │
-│   (Physics +     │    Joint States   │  Grounding DINO ─┐                │
-│    Rendering)    │─────────────────▶│  OWL-ViT ────────┼─▶ Fusion       │
-│                  │                   │                   │    │           │
-│                  │◀────────────────│                   │    ▼           │
-│   Joint Commands │                   │               SAM 2 Segment     │
-│                  │                   │                   │              │
-└─────────────────┘                   │            Depth Deproject       │
-│            + Frame Transform     │
-│                   │              │
-┌──────────────────┐          │            Kalman Filter         │
-│   RL Controller   │◀─────────│            + Grasp Pose          │
-│   (PPO Policy)    │ /target  │                                    │
-└──────────────────┘  _pose   └──────────────────────────────────┘
-## Perception Pipeline Detail
+
+The system operates as a distributed network of ROS2 nodes communicating via a publisher/subscriber model:
+
+- **Dashboard (Browser)** — Operator inputs natural language commands via WebSocket
+- **Perception Stack** — Multi-model detection, segmentation, 3D localisation, temporal filtering
+- **RL Controller** — PPO-trained policy converts 6-DOF target poses to joint velocities
+- **Isaac Sim** — Physics simulation, camera rendering, robot actuation
+
+The data flows in a closed loop: the dashboard publishes a text command, the perception stack processes camera frames to localise the target object, the RL controller converts the target pose into joint commands, and Isaac Sim executes the commands while streaming new camera frames back to the perception stack.
+
+## Perception Pipeline
 
 The perception stack is the centrepiece — a multi-stage pipeline that goes far beyond a single model API call:
-RGB Frame + Text Prompt
-│
-├──▶ Grounding DINO ──┐
-│                      ├──▶ Detection Fusion (IoU-based agreement)
-└──▶ OWL-ViT ─────────┘              │
-▼
-SAM 2 Segmentation
-(pixel-perfect mask)
-│
-▼
-Depth Deprojection (pinhole model)
-+ Camera-to-Robot Frame Transform
-│
-▼
-Kalman Filter (6-state)
-+ 6-DOF Grasp Pose Estimation
-│
-┌───────────┼───────────┐
-▼           ▼           ▼
-/target_pose  /detection  /perception
-(PoseStamped)   _viz      /diagnostics
+
+**Stage 1 — Multi-Model Detection:** Grounding DINO and OWL-ViT independently detect the target object. Their outputs are fused via IoU-based agreement scoring with confidence-weighted box averaging.
+
+**Stage 2 — Instance Segmentation:** SAM 2 takes the fused bounding box as a prompt and produces a pixel-perfect binary mask of the object.
+
+**Stage 3 — 3D Localisation:** The mask centroid is deprojected from 2D pixels to 3D coordinates using a pinhole camera model implemented from scratch, with lens distortion correction and camera-to-robot frame transforms.
+
+**Stage 4 — Grasp Pose Estimation:** Surface normal estimation via plane fitting on the depth point cloud, combined with PCA-based principal axis detection from the segmentation mask. Outputs a full 6-DOF pose (position + orientation).
+
+**Stage 5 — Temporal Filtering:** A 6-state Kalman filter (position + velocity) smooths the target pose across frames with confidence-adaptive measurement noise.
+
+**Stage 6 — Diagnostics:** Real-time pipeline health monitoring publishing structured status on every frame.
 
 ## Evaluation Results
 
@@ -87,43 +67,45 @@ Evaluated on 200 synthetic frames with known ground truth:
 
 ## Quick Start
 
-```bash
-# Clone the repository
-git clone https://github.com/Jayakshata/omnigrasp.git
-cd omnigrasp
+Clone the repository:
 
-# Build and run with Docker Compose
-docker compose -f docker/docker-compose.yml up --build
+    git clone https://github.com/Jayakshata/omnigrasp.git
+    cd omnigrasp
 
-# Or build the image directly
-docker build -f docker/Dockerfile -t omnigrasp:dev .
-docker run --rm -it -v $(pwd)/src:/ros2_ws/src omnigrasp:dev bash
-```
+Build and run with Docker Compose:
+
+    docker compose -f docker/docker-compose.yml up --build
+
+Or build the image directly:
+
+    docker build -f docker/Dockerfile -t omnigrasp:dev .
+    docker run --rm -it -v $(pwd)/src:/ros2_ws/src omnigrasp:dev bash
 
 ## Project Structure
-omnigrasp/
-├── .github/workflows/ci.yml          # CI/CD pipeline
-├── docker/
-│   ├── Dockerfile                     # ROS2 + PyTorch + CV environment
-│   ├── docker-compose.yml             # Multi-service orchestration
-│   └── ros_entrypoint.sh              # ROS2 environment activation
-├── src/
-│   ├── omnigrasp_interfaces/          # Custom ROS2 message definitions
-│   │   └── msg/
-│   │       ├── Detection.msg          # Multi-model detection output
-│   │       └── PerceptionDiagnostics.msg
-│   ├── omnigrasp_perception/          # Multi-stage perception pipeline
-│   │   ├── detectors/                 # GDINO + OWL-ViT + fusion
-│   │   ├── segmentation/              # SAM 2 instance segmentation
-│   │   ├── geometry/                  # Camera model + transforms + grasp pose
-│   │   ├── tracking/                  # Kalman filter temporal smoothing
-│   │   ├── eval/                      # Quantitative evaluation scripts
-│   │   ├── perception_node.py         # Pipeline orchestrator (ROS2 node)
-│   │   ├── mock_camera_node.py        # Synthetic test data generator
-│   │   └── diagnostics.py             # Pipeline health monitoring
-│   └── omnigrasp_control/             # RL-based robot control
-│       └── rl_controller_node.py      # PPO policy executor (placeholder)
-└── README.md
+
+    omnigrasp/
+    ├── .github/workflows/ci.yml          # CI/CD pipeline
+    ├── docker/
+    │   ├── Dockerfile                     # ROS2 + PyTorch + CV environment
+    │   ├── docker-compose.yml             # Multi-service orchestration
+    │   └── ros_entrypoint.sh              # ROS2 environment activation
+    ├── src/
+    │   ├── omnigrasp_interfaces/          # Custom ROS2 message definitions
+    │   │   └── msg/
+    │   │       ├── Detection.msg          # Multi-model detection output
+    │   │       └── PerceptionDiagnostics.msg
+    │   ├── omnigrasp_perception/          # Multi-stage perception pipeline
+    │   │   ├── detectors/                 # GDINO + OWL-ViT + fusion
+    │   │   ├── segmentation/              # SAM 2 instance segmentation
+    │   │   ├── geometry/                  # Camera model + transforms + grasp pose
+    │   │   ├── tracking/                  # Kalman filter temporal smoothing
+    │   │   ├── eval/                      # Quantitative evaluation scripts
+    │   │   ├── perception_node.py         # Pipeline orchestrator (ROS2 node)
+    │   │   ├── mock_camera_node.py        # Synthetic test data generator
+    │   │   └── diagnostics.py             # Pipeline health monitoring
+    │   └── omnigrasp_control/             # RL-based robot control
+    │       └── rl_controller_node.py      # PPO policy executor (placeholder)
+    └── README.md
 
 ## Design Decisions
 
@@ -131,7 +113,7 @@ omnigrasp/
 No single model is perfect. Grounding DINO excels at fine-grained descriptions but can hallucinate. OWL-ViT is faster but less precise. Running both and requiring agreement produces more reliable detections — the same principle used in self-driving car perception stacks.
 
 **Why implement camera geometry from scratch?**
-Using `cv2.projectPoints` would be a single function call. Implementing the pinhole model, distortion correction, and deprojection manually demonstrates understanding of the underlying mathematics — essential for debugging real-world camera issues where library functions produce unexpected results.
+Using cv2.projectPoints would be a single function call. Implementing the pinhole model, distortion correction, and deprojection manually demonstrates understanding of the underlying mathematics — essential for debugging real-world camera issues where library functions produce unexpected results.
 
 **Why a Kalman filter instead of a simple moving average?**
 A moving average treats all measurements equally and introduces lag. The Kalman filter is optimal: it weights measurements by confidence, tracks velocity for prediction, and adapts its trust based on detection reliability. It also provides innovation metrics for diagnostics.
@@ -140,27 +122,27 @@ A moving average treats all measurements equally and introduces lag. The Kalman 
 Bounding boxes describe WHERE an object is. Masks describe WHAT SHAPE it is. Grasp pose estimation requires shape information — a long bolt needs a different approach angle than a round washer. SAM 2's promptable segmentation cleanly separates detection (VLM's job) from segmentation (SAM's job).
 
 **Why mock models for local development?**
-Grounding DINO and SAM 2 require GPU inference. By implementing mock versions with identical interfaces, the full pipeline can be developed, tested, and evaluated on a CPU-only machine. Switching to real models requires changing one constructor argument (`use_mock=False`) — zero architectural changes.
+Grounding DINO and SAM 2 require GPU inference. By implementing mock versions with identical interfaces, the full pipeline can be developed, tested, and evaluated on a CPU-only machine. Switching to real models requires changing one constructor argument (use_mock=False) — zero architectural changes.
 
 ## Tech Stack
 
 - **Perception:** Grounding DINO + OWL-ViT (multi-model fusion), SAM 2 (segmentation)
 - **3D Vision:** Pinhole camera model, depth deprojection, coordinate frame transforms
 - **Tracking:** 6-state Kalman filter with confidence-adaptive noise
-- **Control:** PPO via Stable Baselines3 / Isaac Lab (Week 3)
-- **Simulation:** NVIDIA Isaac Sim + Isaac Lab (Week 3)
+- **Control:** PPO via Stable Baselines3 / Isaac Lab
+- **Simulation:** NVIDIA Isaac Sim + Isaac Lab
 - **Middleware:** ROS2 Humble Hawksbill
 - **Infrastructure:** Docker, Docker Compose, GitHub Actions CI/CD
 - **Testing:** pytest (27 tests), quantitative evaluation with ground truth
 
 ## Future Work
 
-- [ ] Deploy real Grounding DINO + OWL-ViT + SAM 2 on GPU (RunPod RTX 4090)
-- [ ] Train PPO grasping policy in Isaac Lab with 6-DOF target poses
-- [ ] Close the full sim-to-real loop: perception → RL control → Isaac Sim
-- [ ] Web dashboard with live camera feed and diagnostics overlay
-- [ ] Domain randomisation evaluation (varying lighting, textures, object poses)
-- [ ] Real robot deployment via ROS2
+- Deploy real Grounding DINO + OWL-ViT + SAM 2 on GPU (RunPod RTX 4090)
+- Train PPO grasping policy in Isaac Lab with 6-DOF target poses
+- Close the full sim-to-real loop: perception to RL control to Isaac Sim
+- Web dashboard with live camera feed and diagnostics overlay
+- Domain randomisation evaluation (varying lighting, textures, object poses)
+- Real robot deployment via ROS2
 
 ## License
 
