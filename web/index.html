@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniGrasp Dashboard</title>
+    <style>
+        /*
+         * STYLING THE DASHBOARD
+         *
+         * We use a dark theme because:
+         * 1. It's standard for robotics/industrial control interfaces
+         * 2. Easier on the eyes during long operation sessions
+         * 3. It looks professional in demos and screenshots
+         */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #16213e;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #0f3460;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            color: #e94560;
+        }
+
+        .connection-status {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .connected {
+            background: #1b4332;
+            color: #95d5b2;
+        }
+
+        .disconnected {
+            background: #3d0000;
+            color: #ff6b6b;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .camera-panel {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .camera-panel h2 {
+            margin-bottom: 15px;
+            color: #e94560;
+            font-size: 18px;
+        }
+
+        .camera-feed {
+            width: 100%;
+            height: 400px;
+            background: #0a0a1a;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+            font-size: 16px;
+            border: 1px solid #0f3460;
+        }
+
+        .command-section {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .command-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #0f3460;
+            border-radius: 8px;
+            background: #0a0a1a;
+            color: #e0e0e0;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .command-input:focus {
+            border-color: #e94560;
+        }
+
+        .command-input::placeholder {
+            color: #555;
+        }
+
+        .send-btn {
+            padding: 12px 24px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .send-btn:hover {
+            background: #c73e54;
+        }
+
+        .send-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .diagnostics-panel, .pose-panel, .log-panel {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .diagnostics-panel h2, .pose-panel h2, .log-panel h2 {
+            margin-bottom: 15px;
+            color: #e94560;
+            font-size: 18px;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .metric-label {
+            color: #aaa;
+        }
+
+        .metric-value {
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        .status-tracking { color: #95d5b2; }
+        .status-no-detection { color: #ff6b6b; }
+        .status-low-agreement { color: #ffd166; }
+        .status-warning { color: #ffa500; }
+
+        .log-entries {
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid #0a0a1a;
+        }
+
+        .log-time {
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>OmniGrasp Dashboard</h1>
+        <span id="connectionStatus" class="connection-status disconnected">
+            Disconnected
+        </span>
+    </div>
+
+    <div class="main-content">
+        <!-- Left: Camera feed and command input -->
+        <div class="camera-panel">
+            <h2>Camera Feed</h2>
+            <div class="camera-feed" id="cameraFeed">
+                Waiting for camera stream...
+            </div>
+            <div class="command-section">
+                <input
+                    type="text"
+                    class="command-input"
+                    id="commandInput"
+                    placeholder="Type a command... e.g. 'pick up the red bolt'"
+                    disabled
+                />
+                <button class="send-btn" id="sendBtn" onclick="sendCommand()" disabled>
+                    Send
+                </button>
+            </div>
+        </div>
+
+        <!-- Right: Diagnostics and pose -->
+        <div class="side-panel">
+            <div class="diagnostics-panel">
+                <h2>Perception Diagnostics</h2>
+                <div class="metric-row">
+                    <span class="metric-label">Status</span>
+                    <span class="metric-value" id="statusValue">—</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">GDINO Confidence</span>
+                    <span class="metric-value" id="gdinoConf">—</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">OWL-ViT Confidence</span>
+                    <span class="metric-value" id="owlvitConf">—</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Fusion IoU</span>
+                    <span class="metric-value" id="fusionIou">—</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Depth Valid</span>
+                    <span class="metric-value" id="depthValid">—</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Latency</span>
+                    <span class="metric-value" id="latencyValue">—</span>
+                </div>
+            </div>
+
+            <div class="pose-panel">
+                <h2>Target Pose</h2>
+                <div class="metric-row">
+                    <span class="metric-label">X</span>
+                    <span class="metric-value" id="poseX">—</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Y</span>
+                    <span class="metric-value" id="poseY">—</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Z</span>
+                    <span class="metric-value" id="poseZ">—</span>
+                </div>
+            </div>
+
+            <div class="log-panel">
+                <h2>Event Log</h2>
+                <div class="log-entries" id="logEntries">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!--
+        ROSLIB.js — The JavaScript library that talks to rosbridge.
+
+        This library handles the WebSocket protocol for communicating
+        with ROS2 topics. It converts JavaScript objects to ROS2
+        messages and vice versa.
+
+        We load it from a CDN (Content Delivery Network) so we don't
+        need to install anything.
+    -->
+    <script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
+
+    <script>
+        /*
+         * DASHBOARD JAVASCRIPT
+         *
+         * This script:
+         * 1. Connects to rosbridge via WebSocket (port 9090)
+         * 2. Subscribes to /perception/diagnostics (pipeline health)
+         * 3. Subscribes to /target_pose (3D target position)
+         * 4. Publishes to /operator_command (text commands)
+         *
+         * The pattern is the same as ROS2 Python nodes:
+         * - Create a connection (like rclpy.init)
+         * - Create subscribers with callbacks
+         * - Create publishers
+         * - The callbacks update the UI
+         */
+
+        // ============================================================
+        // CONNECTION
+        // ============================================================
+
+        // Connect to rosbridge WebSocket server
+        // rosbridge runs on port 9090 by default
+        var ros = new ROSLIB.Ros({
+            url: 'ws://localhost:9090'
+        });
+
+        // Connection event handlers
+        ros.on('connection', function() {
+            console.log('Connected to rosbridge');
+            document.getElementById('connectionStatus').textContent = 'Connected';
+            document.getElementById('connectionStatus').className = 'connection-status connected';
+            document.getElementById('commandInput').disabled = false;
+            document.getElementById('sendBtn').disabled = false;
+            addLog('Connected to ROS2 network');
+        });
+
+        ros.on('error', function(error) {
+            console.log('Error connecting to rosbridge:', error);
+            addLog('Connection error');
+        });
+
+        ros.on('close', function() {
+            console.log('Disconnected from rosbridge');
+            document.getElementById('connectionStatus').textContent = 'Disconnected';
+            document.getElementById('connectionStatus').className = 'connection-status disconnected';
+            document.getElementById('commandInput').disabled = true;
+            document.getElementById('sendBtn').disabled = true;
+            addLog('Disconnected from ROS2 network');
+        });
+
+        // ============================================================
+        // PUBLISHER: Operator Command
+        // ============================================================
+
+        // Create a publisher for the operator command topic
+        // This is identical in concept to:
+        //   self.command_pub = self.create_publisher(String, '/operator_command', 10)
+        var commandTopic = new ROSLIB.Topic({
+            ros: ros,
+            name: '/operator_command',
+            messageType: 'std_msgs/String'
+        });
+
+        function sendCommand() {
+            var input = document.getElementById('commandInput');
+            var command = input.value.trim();
+
+            if (command === '') return;
+
+            // Publish the command as a ROS2 String message
+            var message = new ROSLIB.Message({
+                data: command
+            });
+            commandTopic.publish(message);
+
+            addLog('Command sent: "' + command + '"');
+            input.value = '';
+        }
+
+        // Allow pressing Enter to send
+        document.getElementById('commandInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendCommand();
+            }
+        });
+
+        // ============================================================
+        // SUBSCRIBER: Diagnostics
+        // ============================================================
+
+        // Subscribe to perception diagnostics
+        // This is identical in concept to:
+        //   self.create_subscription(String, '/perception/diagnostics', callback, 10)
+        var diagTopic = new ROSLIB.Topic({
+            ros: ros,
+            name: '/perception/diagnostics',
+            messageType: 'std_msgs/String'
+        });
+
+        diagTopic.subscribe(function(message) {
+            // Parse the diagnostics string
+            // Format: "status=TRACKING gdino=0.95 owlvit=0.90 iou=0.85 depth_ok=True latency=45.2ms"
+            var parts = message.data.split(' ');
+            var diag = {};
+            parts.forEach(function(part) {
+                var kv = part.split('=');
+                if (kv.length === 2) {
+                    diag[kv[0]] = kv[1];
+                }
+            });
+
+            // Update UI
+            var statusEl = document.getElementById('statusValue');
+            statusEl.textContent = diag['status'] || '—';
+
+            // Color-code the status
+            statusEl.className = 'metric-value';
+            if (diag['status'] === 'TRACKING') {
+                statusEl.classList.add('status-tracking');
+            } else if (diag['status'] === 'NO_DETECTION') {
+                statusEl.classList.add('status-no-detection');
+            } else if (diag['status'] === 'LOW_AGREEMENT') {
+                statusEl.classList.add('status-low-agreement');
+            } else {
+                statusEl.classList.add('status-warning');
+            }
+
+            document.getElementById('gdinoConf').textContent = diag['gdino'] || '—';
+            document.getElementById('owlvitConf').textContent = diag['owlvit'] || '—';
+            document.getElementById('fusionIou').textContent = diag['iou'] || '—';
+            document.getElementById('depthValid').textContent = diag['depth_ok'] || '—';
+            document.getElementById('latencyValue').textContent = diag['latency'] || '—';
+        });
+
+        // ============================================================
+        // SUBSCRIBER: Target Pose
+        // ============================================================
+
+        var poseTopic = new ROSLIB.Topic({
+            ros: ros,
+            name: '/target_pose',
+            messageType: 'geometry_msgs/PoseStamped'
+        });
+
+        poseTopic.subscribe(function(message) {
+            var pos = message.pose.position;
+            document.getElementById('poseX').textContent = pos.x.toFixed(4) + ' m';
+            document.getElementById('poseY').textContent = pos.y.toFixed(4) + ' m';
+            document.getElementById('poseZ').textContent = pos.z.toFixed(4) + ' m';
+        });
+
+        // ============================================================
+        // EVENT LOG
+        // ============================================================
+
+        function addLog(text) {
+            var logDiv = document.getElementById('logEntries');
+            var entry = document.createElement('div');
+            entry.className = 'log-entry';
+
+            var now = new Date();
+            var time = now.toLocaleTimeString();
+
+            entry.innerHTML = '<span class="log-time">[' + time + ']</span> ' + text;
+            logDiv.insertBefore(entry, logDiv.firstChild);
+
+            // Keep only last 50 entries
+            while (logDiv.children.length > 50) {
+                logDiv.removeChild(logDiv.lastChild);
+            }
+        }
+
+        addLog('Dashboard initialized — waiting for connection...');
+    </script>
+</body>
+</html>
