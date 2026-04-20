@@ -10,16 +10,36 @@ OmniGrasp enables a robot arm to grasp arbitrary objects from natural language c
 
 ## System Architecture
 
-The system operates as a distributed network of ROS2 nodes communicating via a publisher/subscriber model:
+```mermaid
+graph LR
+    A[Dashboard<br/>Browser] -->|operator command| B[Perception Stack<br/>GDINO + OWL-ViT + SAM2<br/>Depth + Kalman]
+    C[Isaac Sim<br/>Physics + Rendering] -->|RGB + Depth| B
+    C -->|Joint States| D[RL Controller<br/>PPO Policy]
+    B -->|target_pose 6-DOF| D
+    D -->|Joint Commands| C
+    A -.->|WebSocket| E[rosbridge]
+    E -.->|ROS2| B
+```
 
-- **Dashboard (Browser)** — Operator inputs natural language commands via WebSocket
-- **Perception Stack** — Multi-model detection, segmentation, 3D localisation, temporal filtering
-- **RL Controller** — PPO-trained policy converts 6-DOF target poses to joint velocities
-- **Isaac Sim** — Physics simulation, camera rendering, robot actuation
-
-The data flows in a closed loop: the dashboard publishes a text command, the perception stack processes camera frames to localise the target object, the RL controller converts the target pose into joint commands, and Isaac Sim executes the commands while streaming new camera frames back to the perception stack.
+The system operates as a distributed network of ROS2 nodes. The operator sends a natural language command through the dashboard. The perception stack processes camera frames to localise the target object. The RL controller converts the target pose into joint commands executed by the simulator.
 
 ## Perception Pipeline
+
+```mermaid
+graph TD
+    A[RGB Frame + Text Prompt] --> B[Grounding DINO]
+    A --> C[OWL-ViT]
+    B --> D[Detection Fusion<br/>IoU-based agreement]
+    C --> D
+    D --> E[SAM 2 Segmentation<br/>pixel-perfect mask]
+    E --> F[Depth Deprojection<br/>pinhole camera model]
+    F --> G[Frame Transform<br/>camera to robot]
+    G --> H[Kalman Filter<br/>6-state temporal smoothing]
+    H --> I[6-DOF Grasp Pose]
+    I --> J[/target_pose/]
+    I --> K[/detection_viz/]
+    I --> L[/diagnostics/]
+```
 
 The perception stack is the centrepiece — a multi-stage pipeline that goes far beyond a single model API call:
 
