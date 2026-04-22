@@ -57,16 +57,16 @@ The perception stack is the centrepiece — a multi-stage pipeline that goes far
 
 ## Evaluation Results
 
-Evaluated on 200 synthetic frames with known ground truth:
+Evaluated on synthetic frames with known ground truth (mock models locally, real models on RTX 4090):
 
-| Metric                    | Value    | Notes                           |
-|---------------------------|----------|---------------------------------|
-| Detection Recall          | 100.0%   | 200 frames evaluated            |
-| Detection IoU             | 0.96     | vs ground truth bounding box    |
-| Fusion Agreement Rate     | 100.0%   | GDINO + OWL-ViT IoU > 0.5      |
-| 3D Localisation Error     | 2.0 mm   | Median; 95th percentile: 2.0 mm |
-| Inference Latency         | 66.5 ms  | Per frame (mock models)         |
-
+| Metric                    | Mock (CPU)  | Real (RTX 4090) | Notes                              |
+|---------------------------|-------------|-----------------|-------------------------------------|
+| Detection Recall          | 100.0%      | 100.0%          | 200 frames (mock), 50 frames (GPU) |
+| Detection IoU             | 0.96        | 0.95            | vs ground truth bounding box        |
+| Fusion Agreement Rate     | 100.0%      | 100.0%          | GDINO + OWL-ViT IoU > 0.5          |
+| 3D Localisation Error     | 2.0 mm      | 2.0 mm          | Median; 95th percentile: 2.0 mm    |
+| Inference Latency         | 66.5 ms     | 44.9 ms         | Per frame                           |
+| GPU Memory                | 0 GB        | 1.45 GB         | Out of 24 GB RTX 4090              |
 ## Key Features
 
 **Multi-Model Detection Fusion** — Runs Grounding DINO and OWL-ViT independently, fuses detections via IoU-based agreement scoring with confidence-weighted box averaging. Handles all scenarios: agreed, disagreed, single-model, and no-detection.
