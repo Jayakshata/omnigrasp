@@ -2,8 +2,7 @@
 owl_vit.py — OWL-ViT object detector.
 
 Same interface as Grounding DINO but with a different underlying model.
-In mock mode, it adds slight random noise to simulate a second
-independent model that mostly agrees but isn't identical.
+In mock mode, adds slight random noise to simulate a second independent model.
 """
 
 import numpy as np
@@ -29,13 +28,13 @@ class OWLViTDetector(BaseDetector):
         if self.use_mock:
             pass
         else:
-            # from transformers import pipeline
-            # self.model = pipeline(
-            #     "zero-shot-object-detection",
-            #     model="google/owlvit-base-patch32",
-            #     device=0
-            # )
-            pass
+            from transformers import pipeline
+
+            self.model = pipeline(
+                "zero-shot-object-detection",
+                model="google/owlvit-base-patch32",
+                device=0,
+            )
 
     def detect(self, image: np.ndarray, prompt: str) -> DetectionResult:
         if self.use_mock:
@@ -44,36 +43,21 @@ class OWLViTDetector(BaseDetector):
             return self._real_detect(image, prompt)
 
     def _mock_detect(self, image: np.ndarray, prompt: str) -> DetectionResult:
-        """
-        Mock detection with slight noise to simulate model disagreement.
-
-        WHY ADD NOISE?
-        If both mock detectors returned identical results, our fusion
-        logic would always see perfect agreement (IoU = 1.0). In reality,
-        two models never agree perfectly. Adding small random noise
-        to the bounding box simulates realistic model disagreement,
-        letting us properly test the fusion module.
-        """
+        """Mock detection with slight noise to simulate model disagreement."""
         height, width = image.shape[:2]
         bg_color = image.mean(axis=(0, 1))
         diff = np.abs(image.astype(float) - bg_color)
         mask = diff.mean(axis=2) > 50
-
         nonzero_count = np.sum(mask)
 
         if nonzero_count < 100:
-            return DetectionResult(
-                detected=False,
-                confidence=0.0,
-                model_name="owlvit",
-            )
+            return DetectionResult(detected=False, confidence=0.0, model_name="owlvit")
 
         rows = np.any(mask, axis=1)
         cols = np.any(mask, axis=0)
         y_min, y_max = np.where(rows)[0][[0, -1]]
         x_min, x_max = np.where(cols)[0][[0, -1]]
 
-        # Add small random noise (±5 pixels) to simulate model differences
         rng = np.random.default_rng(seed=42)
         noise = rng.integers(-5, 6, size=4)
         x_min = max(0, x_min + noise[0])
@@ -92,4 +76,23 @@ class OWLViTDetector(BaseDetector):
         )
 
     def _real_detect(self, image: np.ndarray, prompt: str) -> DetectionResult:
-        raise NotImplementedError("Real OWL-ViT requires GPU. Set use_mock=True for local dev.")
+        """Real OWL-ViT detection using HuggingFace pipeline."""
+        from PIL import Image
+
+        pil_image = Image.fromarray(image)
+        results = self.model(pil_image, candidate_labels=[prompt])
+
+        filtered = [r for r in results if r["score"] > 0.1]
+
+        if not filtered:
+            return DetectionResult(detected=False, confidence=0.0, model_name="owlvit")
+
+        best = max(filtered, key=lambda x: x["score"])
+        box = best["box"]
+
+        return DetectionResult(
+            box=np.array([box["xmin"], box["ymin"], box["xmax"], box["ymax"]], dtype=float),
+            confidence=best["score"],
+            detected=True,
+            model_name="owlvit",
+        )
