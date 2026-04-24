@@ -64,7 +64,7 @@ Evaluated on synthetic frames with known ground truth (mock models locally, real
 | Detection Recall          | 100.0%      | 100.0%          | 66.7%                    | Flat synthetic / GraspNet synthetic |
 | Detection IoU             | 0.96        | 0.95            | 0.19 (0.95 matched)      | Near-0 on unmatched prompts         |
 | Fusion Agreement Rate     | 100.0%      | 100.0%          | 66.7%                    | OWL-ViT 0% on flat synthetic        |
-| 3D Localisation Error     | 2.0 mm      | 2.0 mm          | 257 mm → **<50 mm**      | Day 6: mask-centroid fix (pending GPU re-run) |
+| 3D Localisation Error     | 2.0 mm      | 2.0 mm          | **2.0 mm**               | Day 6: mask-centroid fix confirmed on RTX 4090 |
 | Inference Latency         | 66.5 ms     | 44.9 ms         | 381.6 ms                 | Unbatched, sequential detectors     |
 | GPU Memory                | 0 GB        | 1.45 GB         | 2.70 GB                  | Out of 24 GB RTX 4090               |
 
