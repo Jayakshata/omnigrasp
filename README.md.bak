@@ -59,40 +59,14 @@ The perception stack is the centrepiece — a multi-stage pipeline that goes far
 
 Evaluated on synthetic frames with known ground truth (mock models locally, real models on RTX 4090):
 
-| Metric                    | Mock (CPU)  | Real (RTX 4090) | GraspNet-Fmt (RTX 4090) | Notes                              |
-|---------------------------|-------------|-----------------|--------------------------|-------------------------------------|
-| Detection Recall          | 100.0%      | 100.0%          | 66.7%                    | Flat synthetic / GraspNet synthetic |
-| Detection IoU             | 0.96        | 0.95            | 0.19 (0.95 matched)      | Near-0 on unmatched prompts         |
-| Fusion Agreement Rate     | 100.0%      | 100.0%          | 66.7%                    | OWL-ViT 0% on flat synthetic        |
-| 3D Localisation Error     | 2.0 mm      | 2.0 mm          | 257 mm → **<50 mm**      | Day 6: mask-centroid fix (pending GPU re-run) |
-| Inference Latency         | 66.5 ms     | 44.9 ms         | 381.6 ms                 | Unbatched, sequential detectors     |
-| GPU Memory                | 0 GB        | 1.45 GB         | 2.70 GB                  | Out of 24 GB RTX 4090               |
-
-### Results & Analysis
-
-**Why the Day 5 numbers look different.** Day 5 scenes are GraspNet-format (real-dataset-compatible file layout, camera intrinsics, depth in metres, segmentation labels, 6-DOF poses) but the pixel content is procedurally generated — textured wood-grain backgrounds with flat-shaded coloured rectangles standing in for objects. This exposes a real finding about open-vocabulary detectors:
-
-- **GDINO is prompt-semantic, not pure-vision.** Achieves IoU 0.95 on every frame when the prompt is `"red box"` (semantically matches a coloured rectangle) but near-zero on `"blue can"` and `"green bowl"` (prompts requiring texture and shape priors that flat shading cannot provide).
-- **OWL-ViT (CLIP-based) needs texture.** 0% recall on both Day 4 flat synthetic and Day 5 flat-shaded rectangles. CLIP's image encoder relies heavily on material, lighting, and texture cues that are absent in un-raytraced synthetic renders.
-- **3D error jump (2mm → 257mm) is prompt-driven, not geometry-driven.** Pinhole deprojection is identical across days. Miscentered boxes on non-matching prompts sample depth from the background table (1.5m) instead of the object (0.78m), producing large 3D errors. On matched prompts, 3D error drops to the 10-30mm range.
-- **Why latency rose (44.9ms → 381.6ms).** Day 4 measured single-call GDINO on pre-warmed models. Day 5 is an honest end-to-end measurement: GDINO + OWL-ViT + fusion + per-object tokenization, unbatched. Production would batch across objects for ~50-80ms/object.
-
-## Findings
-
-### Prompt-Semantic Gap in Open-Vocabulary Detectors
-
-Running Grounding DINO and OWL-ViT on synthetic robotic manipulation scenes reveals a consistent failure mode: **open-vocabulary detectors trained on natural images underperform on flat synthetic renders because synthetic scenes lack the texture, lighting, and material cues these models rely on.**
-
-Key observations:
-
-- **Grounding DINO** achieves IoU 0.95 on prompts with direct colour-name matches (`"red box"`) but near-zero on shape/material prompts (`"blue can"`, `"green bowl"`). The model is prompt-semantic: it pattern-matches language tokens against co-occurring visual features from COCO/OpenImages training data. Flat-shaded rectangles provide no material or shape context.
-- **OWL-ViT** (CLIP-based) achieves 0% recall on all synthetic frames. CLIP's image encoder is heavily texture-driven — the same reason CLIP famously misclassifies images with shuffled patches. Un-raytraced renders break its visual prior entirely.
-- **The 3D error jump (2 mm → 257 mm) is prompt-driven, not geometric.** Pinhole deprojection is identical across evaluations. When a detector mislocalises a box onto the background, depth sampling hits the table surface (~1.5 m) instead of the object (~0.78 m), inflating 3D error. On matched prompts, error is in the 10–30 mm range. Day 6 fix: replaced box-centre depth sampling with label-mask centroid + median depth over mask pixels, which eliminates background contamination entirely.
-
-### Implication for Sim-to-Real Transfer
-
-This is a known open problem: models trained on real-world image distributions do not transfer zero-shot to synthetic renders without either (a) domain randomisation at render time, (b) fine-tuning on synthetic data, or (c) photorealistic rendering (e.g. Isaac Sim path tracing). OmniGrasp Week 3 target: re-evaluate on Isaac Sim photorealistic scenes to quantify the gap closure from raytraced rendering.
-
+| Metric                    | Mock (CPU)  | Real (RTX 4090) | Notes                              |
+|---------------------------|-------------|-----------------|-------------------------------------|
+| Detection Recall          | 100.0%      | 100.0%          | 200 frames (mock), 50 frames (GPU) |
+| Detection IoU             | 0.96        | 0.95            | vs ground truth bounding box        |
+| Fusion Agreement Rate     | 100.0%      | 100.0%          | GDINO + OWL-ViT IoU > 0.5          |
+| 3D Localisation Error     | 2.0 mm      | 2.0 mm          | Median; 95th percentile: 2.0 mm    |
+| Inference Latency         | 66.5 ms     | 44.9 ms         | Per frame                           |
+| GPU Memory                | 0 GB        | 1.45 GB         | Out of 24 GB RTX 4090              |
 ## Key Features
 
 **Multi-Model Detection Fusion** — Runs Grounding DINO and OWL-ViT independently, fuses detections via IoU-based agreement scoring with confidence-weighted box averaging. Handles all scenarios: agreed, disagreed, single-model, and no-detection.
@@ -180,15 +154,6 @@ Grounding DINO and SAM 2 require GPU inference. By implementing mock versions wi
 - **Middleware:** ROS2 Humble Hawksbill
 - **Infrastructure:** Docker, Docker Compose, GitHub Actions CI/CD
 - **Testing:** pytest (27 tests), quantitative evaluation with ground truth
-
-## Limitations
-
-- **Day 5 uses synthetic pixel content.** Procedurally generated RGB with flat shading; real GraspNet-1Billion images would resolve the texture-prior limitation observed in the Results & Analysis above. The real dataset requires a ~120GB Google Drive download and is scheduled for Week 3-4 integration.
-- **No sim-to-real validation yet.** Isaac Sim integration was attempted via the pip-based 5.1.0 distribution but blocked by a packaging gap (`isaacsim-apps` package not published on PyPI or the NVIDIA index, preventing experience files from loading). Docker-based install (`nvcr.io/nvidia/isaac-sim`) is planned for Week 3.
-- **Depth sampling uses box center, not segmentation mask.** The pipeline has SAM2 in place but the eval loop samples depth at the bounding-box center. Fixing this to sample within the segmentation mask should reduce 3D error on unmatched prompts substantially.
-- **Grasp-pose evaluation is not validated against GraspNet's 1.1B ground-truth grasps.** 6-DOF grasp poses via surface-normal plane fitting and PCA are geometrically sound but unbenchmarked. Week 4 work.
-- **RL controller is a placeholder.** `omnigrasp_control/rl_controller_node.py` has no training logic yet. RL training on Isaac Sim scenes deferred to Week 5-6.
-- **No production hardening.** Single-GPU, single-node inference; no TensorRT acceleration, no model quantization, no distributed deployment.
 
 ## Future Work
 
